@@ -235,7 +235,7 @@ function DisputeSection({
 }
 
 export function ResultsPanel({ result, disputeStatus, onGenerateDispute }: ResultsPanelProps) {
-  const fairRate = result.total_billed - result.total_overcharge;
+  const fairRate = result.total_fair ?? (result.total_billed - result.total_overcharge);
 
   return (
     <Card className="h-full flex flex-col">
