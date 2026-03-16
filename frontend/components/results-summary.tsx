@@ -10,6 +10,8 @@ interface ResultsSummaryProps {
 }
 
 export function ResultsSummary({ result }: ResultsSummaryProps) {
+  const fairRate = result.total_billed - result.total_overcharge;
+  
   const metrics = [
     {
       label: "Total Billed",
@@ -20,7 +22,7 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
     },
     {
       label: "Medicare Fair Rate",
-      value: formatCurrency(result.total_fair),
+      value: formatCurrency(fairRate),
       icon: Scale,
       color: "text-info",
       bgColor: "bg-info/10",
@@ -34,12 +36,12 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
     },
     {
       label: "Errors Found",
-      value: result.error_count.toString(),
+      value: result.errors_found.toString(),
       icon: AlertTriangle,
       color:
-        result.error_count > 0 ? "text-destructive" : "text-success",
+        result.errors_found > 0 ? "text-destructive" : "text-success",
       bgColor:
-        result.error_count > 0 ? "bg-destructive/10" : "bg-success/10",
+        result.errors_found > 0 ? "bg-destructive/10" : "bg-success/10",
     },
   ];
 
