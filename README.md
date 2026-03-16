@@ -45,27 +45,21 @@ All Medicare and billing rules data is stored in Supabase, loaded from official 
 
 ## Quick Start
 
-### Frontend (Next.js)
-
 ```bash
+# 1. Set up environment
+cp .env.example .env
+# Add your NVIDIA_API_KEYS, SUPABASE_URL, SUPABASE_KEY to .env
+
+# 2. Start Python backend (Terminal 1)
+pip install -r requirements.txt
+uvicorn server:app --reload --port 8000
+
+# 3. Start Next.js frontend (Terminal 2)
 npm install
 npm run dev
 ```
 
-The web app will be available at `http://localhost:3000`
-
-### Backend (Python Agents)
-
-```bash
-cp .env.example .env
-# Add your NVIDIA API key and Supabase credentials to .env
-
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Run the test pipeline
-python test_pipeline.py
-```
+Open `http://localhost:3000` - paste a medical bill and click Analyze.
 
 ## Tech Stack
 

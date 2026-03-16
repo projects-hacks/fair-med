@@ -3,35 +3,24 @@
 import { useState } from "react";
 import { Header } from "@/components/header";
 import { BillInput } from "@/components/bill-input";
-import { AnalysisPipeline } from "@/components/analysis-pipeline";
 import { ResultsSummary } from "@/components/results-summary";
 import { PricingTable } from "@/components/pricing-table";
 import { ErrorFindings } from "@/components/error-findings";
 import { DisputeLetter } from "@/components/dispute-letter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import type { AnalysisResult, AgentStep } from "@/lib/types";
-import { Shield, Zap, Lock, FileCheck } from "lucide-react";
-
-const INITIAL_STEPS: AgentStep[] = [
-  { name: "Triage", status: "pending" },
-  { name: "Parser", status: "pending" },
-  { name: "Pricing", status: "pending" },
-  { name: "Auditor", status: "pending" },
-  { name: "Researcher", status: "pending" },
-  { name: "Fact-Checker", status: "pending" },
-  { name: "Writer", status: "pending" },
-];
+import type { AnalysisResult } from "@/lib/types";
+import { Shield, Zap, FileCheck, Loader2 } from "lucide-react";
 
 export default function HomePage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [steps, setSteps] = useState<AgentStep[]>(INITIAL_STEPS);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleAnalyze = async (billText: string) => {
     setIsAnalyzing(true);
-    setSteps(INITIAL_STEPS);
     setResult(null);
+    setError(null);
 
     try {
       const response = await fetch("/api/analyze", {
@@ -40,58 +29,15 @@ export default function HomePage() {
         body: JSON.stringify({ bill_text: billText }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Analysis failed");
+        throw new Error(data.error || "Analysis failed");
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No reader available");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === "step_start") {
-                setSteps((prev) =>
-                  prev.map((step) =>
-                    step.name === data.step
-                      ? { ...step, status: "running" }
-                      : step
-                  )
-                );
-              } else if (data.type === "step_complete") {
-                setSteps((prev) =>
-                  prev.map((step) =>
-                    step.name === data.step
-                      ? { ...step, status: "complete", duration: data.duration }
-                      : step
-                  )
-                );
-              } else if (data.type === "result") {
-                setResult(data.result);
-              } else if (data.type === "error") {
-                console.error("Analysis error:", data.message);
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Analysis failed:", error);
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setIsAnalyzing(false);
     }
@@ -104,7 +50,7 @@ export default function HomePage() {
       <main className="flex-1 container mx-auto px-4 py-8">
         {/* Hero Section */}
         {!result && (
-          <section className="text-center mb-12 animate-fade-in">
+          <section className="text-center mb-12">
             <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">
               AI-Powered Medical Bill Analysis
             </h1>
@@ -113,7 +59,6 @@ export default function HomePage() {
               generate dispute letters with our multi-agent AI system.
             </p>
 
-            {/* Feature Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 max-w-4xl mx-auto">
               <Card className="bg-card/50">
                 <CardContent className="p-6 text-center">
@@ -135,10 +80,10 @@ export default function HomePage() {
               </Card>
               <Card className="bg-card/50">
                 <CardContent className="p-6 text-center">
-                  <Lock className="h-8 w-8 text-primary mx-auto mb-3" />
-                  <h3 className="font-semibold mb-1">Secure & Private</h3>
+                  <Shield className="h-8 w-8 text-primary mx-auto mb-3" />
+                  <h3 className="font-semibold mb-1">NCCI Compliance</h3>
                   <p className="text-sm text-muted-foreground">
-                    Your data is never shared or stored permanently
+                    Checks against official billing rules
                   </p>
                 </CardContent>
               </Card>
@@ -154,8 +99,19 @@ export default function HomePage() {
 
             {isAnalyzing && (
               <Card>
-                <CardContent className="p-6">
-                  <AnalysisPipeline steps={steps} />
+                <CardContent className="p-6 flex flex-col items-center gap-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">
+                    Running 7 AI agents...
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {error && (
+              <Card className="border-destructive">
+                <CardContent className="p-4 text-destructive text-sm">
+                  {error}
                 </CardContent>
               </Card>
             )}
@@ -202,15 +158,9 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-border py-6 mt-auto">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>
-            FairMed uses CMS RVU26B Medicare rates and NCCI 2026Q2 billing rules
-          </p>
-          <p className="mt-1">
-            Built for NVIDIA Agents for Impact Hackathon | SJSU | March 2026
-          </p>
+          <p>FairMed - CMS RVU26B Medicare rates | NCCI 2026Q2 billing rules</p>
         </div>
       </footer>
     </div>
