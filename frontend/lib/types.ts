@@ -55,21 +55,15 @@ export interface BillMetadata {
 
 export interface AnalysisResult {
   session_id: string;
-  bill_text: string;
-  parsed_charges: ParsedCharge[];
-  icd_codes: ICDCode[];
-  bill_metadata: BillMetadata;
-  pricing_results: PricingResult[];
+  status: string;
   total_billed: number;
-  total_fair: number;
   total_overcharge: number;
-  errors_found: BillingError[];
-  error_count: number;
-  patient_rights: PatientRight[];
-  verified_rights: PatientRight[];
+  errors_found: number;  // count from backend
+  parsed_charges: ParsedCharge[];
+  pricing_results: PricingResult[];
+  audit_findings: BillingError[];  // actual errors array
   dispute_letter: string;
-  current_agent: string;
-  status: "pending" | "processing" | "complete" | "error";
+  agents_used: string[];
 }
 
 export interface AgentStep {

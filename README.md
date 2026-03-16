@@ -6,7 +6,7 @@ Multi-agent AI system that analyzes medical bills, detects billing errors (dupli
 
 ## Architecture
 
-8 agents (7 specialist + 1 supervisor) orchestrated by LangGraph:
+7 agents orchestrated by LangGraph:
 
 ```
 USER → pastes medical bill
@@ -41,61 +41,39 @@ USER → pastes medical bill
 - **ICD10API.com** (diagnosis code validation)
 - **DuckDuckGo Search** (patient rights research)
 
-All Medicare and billing rules data is stored in Supabase, loaded from official CMS releases.
+## Project Structure
 
-## Quick Start
-
-```bash
-# 1. Set up environment
-cp .env.example .env
-# Add your NVIDIA_API_KEYS, SUPABASE_URL, SUPABASE_KEY to .env
-
-# 2. Start Python backend (Terminal 1)
-pip install -r requirements.txt
-uvicorn server:app --reload --port 8000
-
-# 3. Start Next.js frontend (Terminal 2)
-npm install
-npm run dev
 ```
-
-Open `http://localhost:3000` - paste a medical bill and click Analyze.
+fairmed/
+├── frontend/              # Next.js 15 app
+│   ├── app/              # App router pages
+│   ├── components/       # React components
+│   └── lib/              # Utilities and types
+├── backend/               # FastAPI backend
+│   └── main.py           # API endpoints
+├── agents/                # Python LangGraph agents
+├── tools/                 # Database and API tools
+└── prompts/               # Agent system prompts
+```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 15, React 19, Tailwind CSS |
+| Backend | FastAPI (Python) |
 | LLM | NVIDIA Nemotron via NIM API |
 | Agent Framework | LangGraph (StateGraph) |
 | Database | Supabase (PostgreSQL) |
-| Language | TypeScript (Frontend), Python 3.11+ (Backend) |
+| Deployment | Vercel (Services API) |
 
-## Project Structure
+## Deploy on Vercel
 
-```
-fairmed/
-├── app/                    # Next.js app router
-│   ├── api/analyze/       # Analysis API endpoint
-│   ├── history/           # Analysis history page
-│   ├── layout.tsx         # Root layout
-│   └── page.tsx           # Main analysis page
-├── components/            # React components
-│   ├── ui/               # Shadcn UI components
-│   ├── bill-input.tsx    # Bill input form
-│   ├── pricing-table.tsx # Pricing comparison table
-│   └── ...
-├── lib/                   # Utilities and types
-├── agents/                # Python LangGraph agents
-├── tools/                 # Python database and API tools
-├── prompts/               # Agent system prompts
-└── scripts/               # Database setup scripts
-```
+This project uses Vercel's Services API with two services:
+- `frontend/` - Next.js app (route prefix: `/`)
+- `backend/` - FastAPI (route prefix: `/api`)
 
-## Features
-
-- **Real-time Analysis Pipeline**: Watch each agent process your bill
-- **Medicare Fair Rates**: Compare charges against official CMS rates
-- **Error Detection**: Identify duplicates, unbundling, upcoding, overcharges
-- **Dispute Letter Generation**: AI-generated letters ready to send
-- **Secure & Private**: Your data is never stored permanently
+Set these environment variables in Vercel:
+- `NVIDIA_API_KEYS` - Your NVIDIA NIM API keys
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_KEY` - Supabase anon key

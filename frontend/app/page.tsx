@@ -23,7 +23,7 @@ export default function HomePage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/analyze", {
+      const response = await fetch("/api/analyze", {  // Routes to Python backend
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bill_text: billText }),
@@ -127,7 +127,7 @@ export default function HomePage() {
                   <TabsList className="w-full justify-start">
                     <TabsTrigger value="pricing">Pricing</TabsTrigger>
                     <TabsTrigger value="errors">
-                      Errors ({result.error_count})
+                      Errors ({result.errors_found})
                     </TabsTrigger>
                     <TabsTrigger value="letter">Dispute Letter</TabsTrigger>
                   </TabsList>
@@ -135,7 +135,7 @@ export default function HomePage() {
                     <PricingTable results={result.pricing_results} />
                   </TabsContent>
                   <TabsContent value="errors">
-                    <ErrorFindings errors={result.errors_found} />
+                    <ErrorFindings errors={result.audit_findings} />
                   </TabsContent>
                   <TabsContent value="letter">
                     <DisputeLetter letter={result.dispute_letter} />
