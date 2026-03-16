@@ -77,7 +77,7 @@ export default function Home() {
                   setCurrentAgent(event.agent);
                   setAgentEvents(prev => [
                     ...prev.filter(e => e.agent !== event.agent),
-                    { ...event.data, agent: event.agent, status: "running" }
+                    { agent: event.agent, status: "running", timestamp: new Date().toISOString() }
                   ]);
                   break;
                   
