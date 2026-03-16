@@ -71,26 +71,51 @@ def run_writer(state: BillShieldState) -> dict[str, Any]:
         response = llm.invoke(messages)
         raw_text = response.content if isinstance(response.content, str) else str(response.content)
     except Exception as exc:
+        print(f"[Writer] LLM error: {exc}")
         return {
             "dispute_letter": _build_fallback_letter(metadata, errors, verified_rights),
             "current_agent": "writer",
         }
 
-    letter = re.sub(r"<thinking>.*?</thinking>", "", raw_text, flags=re.DOTALL).strip()
+    print(f"[Writer] LLM response: {len(raw_text)} chars")
 
-    if letter.startswith("```"):
-        lines = letter.split("\n")
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        letter = "\n".join(lines)
+    letter = _extract_letter(raw_text)
 
     return {
         "dispute_letter": letter,
         "current_agent": "writer",
         "messages": [response],
     }
+
+
+def _extract_letter(raw_text: str) -> str:
+    """Extract the dispute letter from the LLM response, handling thinking tags."""
+    outside_thinking = re.sub(
+        r"<thinking>.*?</thinking>", "", raw_text, flags=re.DOTALL
+    ).strip()
+
+    if len(outside_thinking) > 100:
+        text = outside_thinking
+    else:
+        match = re.search(
+            r"</thinking>\s*(.*)", raw_text, flags=re.DOTALL
+        )
+        if match and len(match.group(1).strip()) > 100:
+            text = match.group(1).strip()
+        else:
+            text = raw_text
+
+    text = re.sub(r"</?thinking>", "", text).strip()
+
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+
+    return text
 
 
 def _extract_bill_metadata(bill_text: str) -> dict[str, Any]:

@@ -61,7 +61,7 @@ def _ensure_api_keys() -> list[str]:
         _api_keys = keys
         _key_cycle = itertools.cycle(_api_keys)
         print(f"[FairMed] Loaded {len(_api_keys)} NVIDIA API key(s) "
-              f"→ effective rate ~{len(_api_keys) * 5} RPM")
+              f"→ effective rate ~{len(_api_keys) * _RPM_LIMIT} RPM")
         return _api_keys
 
     raise ValueError("Set NVIDIA_API_KEY or NVIDIA_API_KEYS in .env")
@@ -79,22 +79,24 @@ def get_next_api_key() -> str:
 # ──────────────────────────────────────────────────────────────
 
 _last_call_time: float = 0.0
-_BASE_INTERVAL = 12.0  # seconds between calls for 1 key (5 RPM)
+_RPM_LIMIT = int(os.getenv("NIM_RPM", "40"))  # build.nvidia.com shows 40 RPM
 
 
 def rate_limit_wait() -> None:
     """Sleep if needed to stay within NIM rate limits.
 
-    With N keys at 5 RPM each, effective interval = 12/N seconds.
-    4+ keys → ~20 RPM → no sleep needed.
+    Default 40 RPM (per build.nvidia.com). Override with NIM_RPM env var.
+    With N keys, effective RPM = N × NIM_RPM.
+    At 40+ RPM, API response time (~5-15s) naturally keeps us under the limit,
+    so this is just a safety net.
     """
     global _last_call_time
     keys = _ensure_api_keys()
-    n = len(keys)
-    if n >= 4:
+    effective_rpm = len(keys) * _RPM_LIMIT
+    if effective_rpm >= 40:
         _last_call_time = time.time()
         return
-    interval = _BASE_INTERVAL / n
+    interval = 60.0 / effective_rpm
     elapsed = time.time() - _last_call_time
     if elapsed < interval:
         time.sleep(interval - elapsed)

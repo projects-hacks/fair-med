@@ -1,0 +1,14 @@
+.venv/
+.env
+.git/
+data/
+__pycache__/
+*.pyc
+k8s/
+.dockerignore
+Dockerfile
+*.md
+test_pipeline.py
+load_*.py
+fetch_*.py
+verify_setup.py

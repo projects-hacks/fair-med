@@ -1,18 +1,21 @@
 """
-BillShield — LangGraph Pipeline
+FairMed — LangGraph Pipeline
 
-Wires all 7 agents into a StateGraph with conditional routing:
+Two-phase architecture:
 
+  Phase 1 (analysis_graph — ~210s):
     START → triage → parser → pricing → auditor ─┐
-                                                  ├─ (errors found?) ──→ researcher → factchecker → writer → END
-                                                  └─ (no errors)     ──→ END
+                                                  ├─ (errors?) → researcher → factchecker → END
+                                                  └─ (clean)  → END
+
+  Phase 2 (generate_letter — ~77s, on-demand):
+    UI shows analysis results immediately.  User clicks
+    "Generate Dispute Letter" → triggers Writer agent async.
 
 Each node is a thin wrapper that:
 1. Persists progress to Supabase (analysis_results table)
 2. Delegates to the agent function
 3. Returns partial state updates
-
-The compiled graph is exposed as `graph` for use by app.py.
 """
 
 from __future__ import annotations
@@ -37,65 +40,59 @@ from tools import db
 # Node wrappers — persist agent output to Supabase after each step
 # ──────────────────────────────────────────────────────────────
 
-def _triage_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_triage(state)
-    _persist(state, "triage", {
-        "status": "running",
-        "agents_used": ["triage"],
-    })
+def _timed(name, fn, state, persist_data):
+    t0 = time.time()
+    result = fn(state)
+    elapsed = time.time() - t0
+    print(f"[{name}] done in {elapsed:.1f}s")
+    _persist(state, name.lower(), persist_data(result))
     return result
+
+
+def _triage_node(state: BillShieldState) -> dict[str, Any]:
+    return _timed("Triage", run_triage, state, lambda r: {
+        "status": "running", "agents_used": ["triage"],
+    })
 
 
 def _parser_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_parser(state)
-    _persist(state, "parser", {
-        "parsed_charges": result.get("parsed_charges", []),
-        "icd_codes": result.get("icd_codes", []),
+    return _timed("Parser", run_parser, state, lambda r: {
+        "parsed_charges": r.get("parsed_charges", []),
+        "icd_codes": r.get("icd_codes", []),
     })
-    return result
 
 
 def _pricing_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_pricing(state)
-    _persist(state, "pricing", {
-        "pricing_analysis": result.get("pricing_results", []),
-        "total_billed": result.get("total_billed", 0.0),
+    return _timed("Pricing", run_pricing, state, lambda r: {
+        "pricing_analysis": r.get("pricing_results", []),
+        "total_billed": r.get("total_billed", 0.0),
     })
-    return result
 
 
 def _auditor_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_auditor(state)
-    _persist(state, "auditor", {
-        "audit_findings": result.get("errors_found", []),
-        "errors_found": result.get("error_count", 0),
+    return _timed("Auditor", run_auditor, state, lambda r: {
+        "audit_findings": r.get("errors_found", []),
+        "errors_found": r.get("error_count", 0),
     })
-    return result
 
 
 def _researcher_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_researcher(state)
-    _persist(state, "researcher", {
-        "research_findings": result.get("patient_rights", []),
+    return _timed("Researcher", run_researcher, state, lambda r: {
+        "research_findings": r.get("patient_rights", []),
     })
-    return result
 
 
 def _factchecker_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_factchecker(state)
-    _persist(state, "factchecker", {
-        "verified_rights": result.get("verified_rights", []),
+    return _timed("FactChecker", run_factchecker, state, lambda r: {
+        "verified_rights": r.get("verified_rights", []),
     })
-    return result
 
 
 def _writer_node(state: BillShieldState) -> dict[str, Any]:
-    result = run_writer(state)
-    _persist(state, "writer", {
-        "dispute_letter": result.get("dispute_letter", ""),
+    return _timed("Writer", run_writer, state, lambda r: {
+        "dispute_letter": r.get("dispute_letter", ""),
         "total_overcharge": state.get("total_overcharge", 0.0),
     })
-    return result
 
 
 # ──────────────────────────────────────────────────────────────
@@ -149,26 +146,22 @@ def _persist(state: BillShieldState, agent_name: str, updates: dict[str, Any]) -
 # ──────────────────────────────────────────────────────────────
 
 def build_graph() -> StateGraph:
-    """Construct the BillShield StateGraph (uncompiled)."""
+    """Construct the FairMed analysis StateGraph (Phase 1 — no Writer)."""
     builder = StateGraph(BillShieldState)
 
-    # Add all nodes
     builder.add_node("triage", _triage_node)
     builder.add_node("parser", _parser_node)
     builder.add_node("pricing", _pricing_node)
     builder.add_node("auditor", _auditor_node)
     builder.add_node("researcher", _researcher_node)
     builder.add_node("factchecker", _factchecker_node)
-    builder.add_node("writer", _writer_node)
     builder.add_node("end_no_errors", _end_no_errors_node)
 
-    # Sequential pipeline: START → triage → parser → pricing → auditor
     builder.add_edge(START, "triage")
     builder.add_edge("triage", "parser")
     builder.add_edge("parser", "pricing")
     builder.add_edge("pricing", "auditor")
 
-    # Conditional branch after auditor
     builder.add_conditional_edges(
         "auditor",
         _route_after_auditor,
@@ -178,39 +171,35 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # Research → fact-check → write → END
     builder.add_edge("researcher", "factchecker")
-    builder.add_edge("factchecker", "writer")
-    builder.add_edge("writer", END)
+    builder.add_edge("factchecker", END)
     builder.add_edge("end_no_errors", END)
 
     return builder
 
 
 def compile_graph():
-    """Build and compile the graph, ready to invoke."""
+    """Build and compile the analysis graph."""
     return build_graph().compile()
 
 
-# Pre-compiled graph instance for import by app.py
-graph = compile_graph()
+analysis_graph = compile_graph()
+
+# Backward-compat alias
+graph = analysis_graph
 
 
 # ──────────────────────────────────────────────────────────────
-# Convenience runner
+# Phase 1 — analyze_bill (returns results without letter)
 # ──────────────────────────────────────────────────────────────
 
 def analyze_bill(bill_text: str, session_id: str | None = None) -> dict[str, Any]:
     """
-    Run the full BillShield pipeline on a medical bill.
+    Run the analysis pipeline on a medical bill (Phase 1).
 
-    Args:
-        bill_text: Raw text of the itemized medical bill.
-        session_id: Optional Supabase session ID for persistence.
-                    If None, a new session is created automatically.
-
-    Returns:
-        The final state dict containing all analysis results.
+    Returns the final state with all findings (charges, pricing,
+    errors, rights) but NO dispute letter.  Call generate_letter()
+    separately when the user requests one.
     """
     if session_id is None:
         try:
@@ -224,8 +213,10 @@ def analyze_bill(bill_text: str, session_id: str | None = None) -> dict[str, Any
     }
 
     start_time = time.time()
-    final_state = graph.invoke(initial_state)
+    final_state = analysis_graph.invoke(initial_state)
     elapsed_ms = int((time.time() - start_time) * 1000)
+
+    final_state["processing_time_ms"] = elapsed_ms
 
     if session_id:
         try:
@@ -234,9 +225,42 @@ def analyze_bill(bill_text: str, session_id: str | None = None) -> dict[str, Any
                 "total_overcharge": final_state.get("total_overcharge", 0.0),
                 "errors_found": final_state.get("error_count", 0),
                 "processing_time_ms": elapsed_ms,
-                "dispute_letter": final_state.get("dispute_letter", ""),
             })
         except Exception:
             pass
 
     return final_state
+
+
+# ──────────────────────────────────────────────────────────────
+# Phase 2 — generate_letter (on-demand, async-friendly)
+# ──────────────────────────────────────────────────────────────
+
+def generate_letter(analysis_state: dict[str, Any]) -> str:
+    """
+    Generate a dispute letter from a completed analysis state (Phase 2).
+
+    Call this AFTER analyze_bill() returns and the user clicks
+    "Generate Dispute Letter".  It runs the Writer agent once and
+    returns the letter text.
+
+    Args:
+        analysis_state: The dict returned by analyze_bill().
+
+    Returns:
+        The dispute letter as a string.
+    """
+    t0 = time.time()
+    result = run_writer(analysis_state)
+    letter = result.get("dispute_letter", "")
+    elapsed = time.time() - t0
+    print(f"[Writer] done in {elapsed:.1f}s")
+
+    session_id = analysis_state.get("session_id")
+    if session_id:
+        try:
+            db.update_analysis(session_id, {"dispute_letter": letter})
+        except Exception:
+            pass
+
+    return letter

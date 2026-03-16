@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fairmed-api
+  namespace: fairmed
+  labels:
+    app: fairmed-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fairmed-api
+  template:
+    metadata:
+      labels:
+        app: fairmed-api
+    spec:
+      containers:
+        - name: fairmed-api
+          image: ghcr.io/projects-hacks/fair-med:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: fairmed-secrets
+          env:
+            - name: NIM_RPM
+              value: "40"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Analysis calls take up to 5 min — don't kill the pod
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10

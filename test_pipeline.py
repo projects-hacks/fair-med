@@ -57,20 +57,21 @@ EXPECTED_TRAPS = {
 
 
 def main():
-    from agents.graph import analyze_bill
+    from agents.graph import analyze_bill, generate_letter
 
     print("=" * 70)
-    print("BILLSHIELD — FULL PIPELINE INTEGRATION TEST")
+    print("FAIRMED — PIPELINE TEST (2-phase)")
     print("=" * 70)
     print()
     print(f"Demo bill: 7 line items, $1,340 total, 4 embedded traps")
     print(f"Expected traps: {', '.join(EXPECTED_TRAPS.keys())}")
     print()
 
-    start = time.time()
-
-    print("Running pipeline... (expect ~90-120s with rate limiting)")
+    # ── Phase 1: Analysis ──
+    print("Phase 1: Analysis (Triage → Parser → Pricing → Auditor → Researcher → FactChecker)")
     print()
+
+    start = time.time()
 
     try:
         result = analyze_bill(DEMO_BILL, session_id="")
@@ -80,8 +81,8 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    elapsed = time.time() - start
-    print(f"Pipeline completed in {elapsed:.1f}s")
+    phase1_time = time.time() - start
+    print(f"Phase 1 completed in {phase1_time:.1f}s")
     print()
 
     # Check results
@@ -142,13 +143,6 @@ def main():
     for v in verified:
         print(f"    {v.get('title','?')[:60]} | {v.get('status','?')}")
 
-    # Writer
-    letter = result.get("dispute_letter", "")
-    print(f"\n--- WRITER ---")
-    print(f"  Letter length: {len(letter)} chars")
-    print(f"  First 300 chars:")
-    print(f"    {letter[:300]}")
-
     # Trap verification
     print()
     print("=" * 70)
@@ -165,14 +159,33 @@ def main():
 
     print()
     if all_pass:
-        print("ALL 4 TRAPS DETECTED — DEMO READY")
+        print("ALL 4 TRAPS DETECTED")
     else:
         missed = [t for t in EXPECTED_TRAPS if t not in found_types]
         print(f"WARNING: {len(missed)} trap(s) missed: {', '.join(missed)}")
-        print("The auditor may still catch these through different type labels.")
         print(f"Actual error types found: {found_types}")
 
-    print(f"\nTotal time: {elapsed:.1f}s")
+    # ── Phase 2: Letter generation (on-demand) ──
+    print()
+    print("=" * 70)
+    print("Phase 2: Generating dispute letter on demand...")
+    print("=" * 70)
+
+    letter_start = time.time()
+    letter = generate_letter(result)
+    phase2_time = time.time() - letter_start
+
+    print(f"\n--- DISPUTE LETTER ---")
+    print(f"  Length: {len(letter)} chars")
+    print(f"  First 300 chars:")
+    print(f"    {letter[:300]}")
+
+    print()
+    print(f"Phase 1 (analysis):  {phase1_time:.1f}s")
+    print(f"Phase 2 (letter):    {phase2_time:.1f}s")
+    print(f"Total:               {phase1_time + phase2_time:.1f}s")
+    if all_pass:
+        print("\nDEMO READY")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,16 @@
 """
-BillShield agent implementations.
+FairMed agent implementations.
 
-Each sub-module defines a single agent function that accepts a
-BillShieldState and returns a partial state update dict.
+Usage for the UI:
+
+    from agents.graph import analyze_bill, generate_letter
+
+    # Phase 1 — run analysis (~210s), returns all findings
+    state = analyze_bill(bill_text)
+
+    # Show results to user immediately...
+    # If errors found, show "Generate Dispute Letter" button
+
+    # Phase 2 — generate letter on demand (~77s)
+    letter = generate_letter(state)
 """
