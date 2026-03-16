@@ -45,6 +45,17 @@ All Medicare and billing rules data is stored in Supabase, loaded from official 
 
 ## Quick Start
 
+### Frontend (Next.js)
+
+```bash
+npm install
+npm run dev
+```
+
+The web app will be available at `http://localhost:3000`
+
+### Backend (Python Agents)
+
 ```bash
 cp .env.example .env
 # Add your NVIDIA API key and Supabase credentials to .env
@@ -52,16 +63,45 @@ cp .env.example .env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run the app
-streamlit run app.py
+# Run the test pipeline
+python test_pipeline.py
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
+| Frontend | Next.js 15, React 19, Tailwind CSS |
 | LLM | NVIDIA Nemotron via NIM API |
 | Agent Framework | LangGraph (StateGraph) |
-| UI | Streamlit |
 | Database | Supabase (PostgreSQL) |
-| Language | Python 3.11+ |
+| Language | TypeScript (Frontend), Python 3.11+ (Backend) |
+
+## Project Structure
+
+```
+fairmed/
+├── app/                    # Next.js app router
+│   ├── api/analyze/       # Analysis API endpoint
+│   ├── history/           # Analysis history page
+│   ├── layout.tsx         # Root layout
+│   └── page.tsx           # Main analysis page
+├── components/            # React components
+│   ├── ui/               # Shadcn UI components
+│   ├── bill-input.tsx    # Bill input form
+│   ├── pricing-table.tsx # Pricing comparison table
+│   └── ...
+├── lib/                   # Utilities and types
+├── agents/                # Python LangGraph agents
+├── tools/                 # Python database and API tools
+├── prompts/               # Agent system prompts
+└── scripts/               # Database setup scripts
+```
+
+## Features
+
+- **Real-time Analysis Pipeline**: Watch each agent process your bill
+- **Medicare Fair Rates**: Compare charges against official CMS rates
+- **Error Detection**: Identify duplicates, unbundling, upcoding, overcharges
+- **Dispute Letter Generation**: AI-generated letters ready to send
+- **Secure & Private**: Your data is never stored permanently
