@@ -152,7 +152,8 @@ def extract_json(text: str) -> dict[str, Any] | list[Any]:
     """
     Extract the first JSON object or array from LLM output.
 
-    Handles markdown fenced code blocks and stray text before/after.
+    Handles markdown fenced code blocks, stray text before/after,
+    and content inside <thinking> tags (reasoning models may put JSON there).
     """
     if not text:
         return {}
@@ -160,37 +161,49 @@ def extract_json(text: str) -> dict[str, Any] | list[Any]:
     # Strip <thinking>...</thinking> tags from reasoning models
     cleaned = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL).strip()
 
-    # Try the full text first
-    for candidate in [cleaned, text]:
+    # Also extract content from inside thinking (model may put JSON there)
+    thinking_match = re.search(r"<thinking>(.*?)</thinking>", text, re.DOTALL)
+    inside_thinking = thinking_match.group(1).strip() if thinking_match else ""
+
+    # Try: cleaned (no thinking), full text, then inside thinking
+    for candidate in [cleaned, text, inside_thinking]:
+        if not candidate:
+            continue
         try:
             return json.loads(candidate)
         except (json.JSONDecodeError, ValueError):
             pass
 
-    # Try to find JSON inside markdown code fences
-    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL)
-    if fence_match:
-        try:
-            return json.loads(fence_match.group(1).strip())
-        except (json.JSONDecodeError, ValueError):
-            pass
+    # Try to find JSON inside markdown code fences (check both cleaned and inside_thinking)
+    for search_text in [cleaned, inside_thinking]:
+        if not search_text:
+            continue
+        fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", search_text, re.DOTALL)
+        if fence_match:
+            try:
+                return json.loads(fence_match.group(1).strip())
+            except (json.JSONDecodeError, ValueError):
+                pass
 
     # Try to find a JSON object or array with brace/bracket matching
-    for start_char, end_char in [("{", "}"), ("[", "]")]:
-        start = cleaned.find(start_char)
-        if start == -1:
+    for search_text in [cleaned, inside_thinking]:
+        if not search_text:
             continue
-        depth = 0
-        for i in range(start, len(cleaned)):
-            if cleaned[i] == start_char:
-                depth += 1
-            elif cleaned[i] == end_char:
-                depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(cleaned[start : i + 1])
-                except (json.JSONDecodeError, ValueError):
-                    break
+        for start_char, end_char in [("{", "}"), ("[", "]")]:
+            start = search_text.find(start_char)
+            if start == -1:
+                continue
+            depth = 0
+            for i in range(start, len(search_text)):
+                if search_text[i] == start_char:
+                    depth += 1
+                elif search_text[i] == end_char:
+                    depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(search_text[start : i + 1])
+                    except (json.JSONDecodeError, ValueError):
+                        break
 
     return {}
 

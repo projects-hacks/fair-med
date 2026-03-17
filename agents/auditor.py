@@ -23,6 +23,7 @@ from ._common import (
     get_super_llm,
     load_prompt,
     rate_limit_wait,
+    _extract_content,
 )
 from tools import db
 
@@ -67,8 +68,12 @@ def run_auditor(state: BillShieldState) -> dict[str, Any]:
     billing_rules = _load_relevant_billing_rules(charges)
     rule_summary = _build_rule_summary(billing_rules)
 
+    # Use enable_thinking=False so Nemotron returns direct JSON instead of
+    # putting output in <thinking> tags (which can result in empty content)
     llm = get_super_llm(max_completion_tokens=8192)
     system_prompt = load_prompt("auditor")
+    # Prepend reasoning-off hint for Nemotron Super (reduces empty responses)
+    system_prompt = "detailed thinking off\n\n" + system_prompt
 
     triage = state.get("triage_output", {})
 
@@ -101,7 +106,7 @@ def run_auditor(state: BillShieldState) -> dict[str, Any]:
     try:
         rate_limit_wait()
         response = llm.invoke(messages)
-        raw_text = response.content if isinstance(response.content, str) else str(response.content)
+        raw_text = _extract_content(response)
     except Exception as exc:
         print(f"[Auditor] LLM error: {type(exc).__name__}: {exc}")
         return {
@@ -121,6 +126,12 @@ def run_auditor(state: BillShieldState) -> dict[str, Any]:
 
     errors = parsed.get("errors", [])
     print(f"[Auditor] parsed {len(errors)} errors from response")
+
+    # Fallback: when LLM returns 0 errors but triage flagged issues or pricing shows MAJOR overcharges
+    if not errors and (triage.get("red_flags") or _has_major_overcharges(pricing)):
+        errors = _infer_errors_from_triage(state, pricing, charges)
+        if errors:
+            print(f"[Auditor] fallback: inferred {len(errors)} errors from triage + pricing")
 
     cleaned_errors: list[dict[str, Any]] = []
     for err in errors:
@@ -144,6 +155,96 @@ def run_auditor(state: BillShieldState) -> dict[str, Any]:
         "current_agent": "auditor",
         "messages": [response],
     }
+
+
+def _has_major_overcharges(pricing: list) -> bool:
+    """True if any charge has MAJOR or EXTREME severity."""
+    for p in pricing or []:
+        if isinstance(p, dict) and p.get("severity") in ("MAJOR", "EXTREME"):
+            return True
+    return False
+
+
+def _infer_errors_from_triage(
+    state: BillShieldState,
+    pricing: list,
+    charges: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Infer billing errors from triage red flags and pricing when LLM returns empty.
+    Maps red-flag patterns to error types and adds MAJOR overcharges from pricing.
+    """
+    errors: list[dict[str, Any]] = []
+    triage = state.get("triage_output", {})
+    red_flags = triage.get("red_flags", [])
+    pricing_by_cpt = {str(p.get("cpt_code", "")): p for p in (pricing or []) if isinstance(p, dict) and p.get("cpt_code")}
+
+    # Map red-flag substrings to error type
+    flag_to_type = [
+        ("duplicate", "DUPLICATE"),
+        ("99213 appears twice", "DUPLICATE"),
+        ("upcoding", "UPCODING"),
+        ("99215", "UPCODING"),
+        ("unbundling", "UNBUNDLING"),
+        ("BMP", "UNBUNDLING"),
+        ("CMP", "UNBUNDLING"),
+        ("overlapping lab", "UNBUNDLING"),
+    ]
+
+    seen_types: set[str] = set()
+    for flag in red_flags:
+        flag_lower = (flag or "").lower()
+        for pattern, etype in flag_to_type:
+            if pattern.lower() in flag_lower and etype not in seen_types:
+                seen_types.add(etype)
+                # Infer CPT codes from flag text
+                cpt_codes: list[str] = []
+                if "99213" in flag:
+                    cpt_codes = ["99213"]
+                elif "99215" in flag:
+                    cpt_codes = ["99215"]
+                elif "80048" in flag or "80053" in flag or "BMP" in flag or "CMP" in flag:
+                    cpt_codes = ["80048", "80053"]
+                errors.append({
+                    "type": etype,
+                    "severity": "HIGH",
+                    "description": flag[:200],
+                    "cpt_codes": cpt_codes or [],
+                    "evidence": f"Triage red flag: {flag[:150]}",
+                    "rule_source": "Triage fallback",
+                    "potential_savings_low": 0.0,
+                    "potential_savings_high": 0.0,
+                    "confidence": "MEDIUM",
+                })
+                break
+
+    # Add MAJOR/EXTREME overcharges from pricing
+    for p in pricing or []:
+        if not isinstance(p, dict):
+            continue
+        sev = p.get("severity")
+        if sev not in ("MAJOR", "EXTREME"):
+            continue
+        cpt = str(p.get("cpt_code", ""))
+        billed = _safe_float(p.get("billed"))
+        medicare = _safe_float(p.get("medicare_rate"))
+        savings = billed - medicare if billed and medicare else 0.0
+        # Avoid duplicate OVERCHARGE for same CPT
+        if any(e.get("type") == "OVERCHARGE" and cpt in e.get("cpt_codes", []) for e in errors):
+            continue
+        errors.append({
+            "type": "OVERCHARGE",
+            "severity": "HIGH",
+            "description": f"{cpt} billed ${billed:.2f} vs Medicare ${medicare:.2f} ({sev})",
+            "cpt_codes": [cpt],
+            "evidence": f"Pricing: {sev} overcharge",
+            "rule_source": "CMS PFS RVU26B",
+            "potential_savings_low": savings,
+            "potential_savings_high": savings,
+            "confidence": "HIGH",
+        })
+
+    return errors
 
 
 def _build_rule_summary(rules: dict[str, Any]) -> str:

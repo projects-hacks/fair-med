@@ -262,7 +262,11 @@ async def _stream_pipeline(bill_text: str):
             traceback.print_exc()
 
     # Conditional branch: if errors found, run researcher → factchecker → writer
+    # Use error_count from Auditor; fallback to len(errors_found) for robustness
+    errors_found = state.get("errors_found", [])
     error_count = int(state.get("error_count", 0) or 0)
+    if error_count == 0 and errors_found:
+        error_count = len(errors_found)
 
     if error_count > 0:
         for agent_name, agent_fn in DISPUTE_STEPS:
