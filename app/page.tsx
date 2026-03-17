@@ -43,6 +43,28 @@ async function fetchFromBackend(path: string, init?: RequestInit): Promise<Respo
 
 function toAbsoluteDownloadUrl(url?: string): string | undefined {
   if (!url) return url;
+
+  const normalizePath = (path: string): string => {
+    if (path.startsWith("/api/")) return path;
+    if (path.startsWith("/dispute/")) return `/api${path}`;
+    return path;
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.origin === window.location.origin) {
+        return normalizePath(`${parsed.pathname}${parsed.search}`);
+      }
+    } catch {
+      // keep fallback behavior below
+    }
+  }
+
+  if (url.startsWith("/")) {
+    return normalizePath(url);
+  }
+
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   const candidates = getBackendCandidates();
   const absoluteBase = candidates.find((c) => c.startsWith("http://") || c.startsWith("https://"));

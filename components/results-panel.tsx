@@ -215,6 +215,21 @@ function DisputeSection({
     );
   }
 
+  if (!status.download_url) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <AlertTriangle className="h-12 w-12 text-warning mb-4" />
+        <h3 className="font-medium mb-2">Letter Ready, Link Missing</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          The letter was generated, but download URL was not returned. Try regenerating once.
+        </p>
+        <Button onClick={onGenerate} variant="outline">
+          Regenerate Link
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center mb-4">
