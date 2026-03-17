@@ -95,13 +95,7 @@ def _extract_letter(raw_text: str) -> str:
     if len(outside_thinking) > 100:
         text = outside_thinking
     else:
-<<<<<<< HEAD
-        match = re.search(
-            r"</thinking>\s*(.*)", raw_text, flags=re.DOTALL
-        )
-=======
         match = re.search(r"</thinking>\s*(.*)", raw_text, flags=re.DOTALL)
->>>>>>> 2ee17ca (fix: CORS, rate limiter, writer letter extraction, dispute_generate status)
         if match and len(match.group(1).strip()) > 100:
             text = match.group(1).strip()
         else:
