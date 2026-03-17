@@ -7,7 +7,7 @@ import { AgentWorkflow } from "@/components/agent-workflow";
 import { ResultsPanel } from "@/components/results-panel";
 import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/lib/types";
 
-const BACKEND_URL = "http://23.239.6.35";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://23.239.6.35";
 
 // Agent sequence for visualization
 const AGENT_SEQUENCE: AgentName[] = ["triage", "parser", "pricing", "auditor", "researcher", "factchecker", "writer"];
