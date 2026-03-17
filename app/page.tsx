@@ -10,26 +10,18 @@ import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/li
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
 
 function getBackendCandidates(): string[] {
-  const candidates: string[] = [];
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    return ["/api"];
+  }
 
+  const candidates: string[] = [];
   if (BACKEND_URL) {
     candidates.push(BACKEND_URL.replace(/\/$/, ""));
   }
-
-  if (typeof window !== "undefined") {
-    const isHttpsPage = window.location.protocol === "https:";
-    if (isHttpsPage && BACKEND_URL.startsWith("http://")) {
-      const httpsCandidate = BACKEND_URL.replace(/^http:\/\//, "https://").replace(/\/$/, "");
-      if (!candidates.includes(httpsCandidate)) {
-        candidates.unshift(httpsCandidate);
-      }
-      if (!candidates.includes("/api")) {
-        candidates.push("/api");
-      }
-    }
+  if (!candidates.includes("/api")) {
+    candidates.push("/api");
   }
-
-  return candidates.length > 0 ? candidates : ["/api"];
+  return candidates;
 }
 
 async function fetchFromBackend(path: string, init?: RequestInit): Promise<Response> {
