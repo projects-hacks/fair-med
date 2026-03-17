@@ -15,9 +15,11 @@ spec:
       labels:
         app: fairmed-api
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: fairmed-api
-          image: ghcr.io/projects-hacks/fair-med:latest
+          image: ghcr.io/rajeev-chaurasia/fair-med:latest
           ports:
             - containerPort: 8000
           envFrom:
