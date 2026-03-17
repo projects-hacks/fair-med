@@ -6,6 +6,7 @@ import { BillInput } from "@/components/bill-input";
 import { AgentWorkflow } from "@/components/agent-workflow";
 import { ResultsPanel } from "@/components/results-panel";
 import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/lib/types";
+import { HeartPulse, ArrowRight } from "lucide-react";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
 
@@ -74,6 +75,34 @@ function toAbsoluteDownloadUrl(url?: string): string | undefined {
   return url;
 }
 
+function EmptyResultsPlaceholder({ isAnalyzing }: { isAnalyzing: boolean }) {
+  if (isAnalyzing) {
+    return (
+      <div className="h-full border rounded-lg bg-card flex items-center justify-center">
+        <div className="text-center text-muted-foreground animate-fade-in-up">
+          <div className="h-12 w-12 mx-auto mb-3 rounded-full bg-primary/10 flex items-center justify-center">
+            <ArrowRight className="h-5 w-5 text-primary animate-pulse-dot" />
+          </div>
+          <p className="text-lg font-medium mb-1">Analyzing your bill...</p>
+          <p className="text-sm">Results will appear here when the agents finish</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full border rounded-lg bg-card flex items-center justify-center">
+      <div className="text-center text-muted-foreground">
+        <div className="h-14 w-14 mx-auto mb-4 rounded-xl bg-muted flex items-center justify-center">
+          <HeartPulse className="h-7 w-7 text-muted-foreground/50" />
+        </div>
+        <p className="text-lg font-medium mb-1 text-foreground/70">No results yet</p>
+        <p className="text-sm max-w-[220px] mx-auto">Upload or paste a medical bill to start the AI analysis</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
@@ -90,7 +119,6 @@ export default function Home() {
     setDisputeStatus(null);
 
     try {
-      // Create form data for file upload or text
       const formData = new FormData();
       if (data.file) {
         formData.append("file", data.file);
@@ -132,12 +160,12 @@ export default function Home() {
 
             try {
               const event = JSON.parse(jsonStr);
-              
+
               switch (event.type) {
                 case "session_start":
                   setSessionId(event.session_id);
                   break;
-                  
+
                 case "agent_start":
                   setCurrentAgent(event.agent);
                   setAgentEvents(prev => [
@@ -145,48 +173,48 @@ export default function Home() {
                     { agent: event.agent, status: "running", timestamp: new Date().toISOString() }
                   ]);
                   break;
-                  
+
                 case "agent_reasoning":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
+                  setAgentEvents(prev => prev.map(e =>
+                    e.agent === event.agent
                       ? { ...e, reasoning: event.reasoning }
                       : e
                   ));
                   break;
-                  
+
                 case "agent_tool_call":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
+                  setAgentEvents(prev => prev.map(e =>
+                    e.agent === event.agent
                       ? { ...e, tool_calls: [...(e.tool_calls || []), event.tool_call] }
                       : e
                   ));
                   break;
-                  
+
                 case "agent_complete":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
+                  setAgentEvents(prev => prev.map(e =>
+                    e.agent === event.agent
                       ? { ...e, status: "complete", output: event.output }
                       : e
                   ));
                   setCurrentAgent(null);
                   break;
-                  
+
                 case "agent_error":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
+                  setAgentEvents(prev => prev.map(e =>
+                    e.agent === event.agent
                       ? { ...e, status: "error", error: event.error }
                       : e
                   ));
                   setCurrentAgent(null);
                   break;
-                  
+
                 case "agent_skipped":
                   setAgentEvents(prev => [
                     ...prev.filter(e => e.agent !== event.agent),
                     { agent: event.agent, status: "skipped", timestamp: new Date().toISOString() }
                   ]);
                   break;
-                  
+
                 case "analysis_complete":
                   setResult(event.result);
                   setCurrentAgent(null);
@@ -240,7 +268,6 @@ export default function Home() {
         throw new Error("Failed to start dispute generation");
       }
 
-      // Poll for status
       const pollStatus = async () => {
         const statusResponse = await fetchFromBackend(`/dispute/status/${sessionId}`);
         const statusData = await statusResponse.json();
@@ -256,10 +283,10 @@ export default function Home() {
 
       pollStatus();
     } catch (error) {
-      setDisputeStatus({ 
-        session_id: sessionId, 
-        status: "error", 
-        error: error instanceof Error ? error.message : "Unknown error" 
+      setDisputeStatus({
+        session_id: sessionId,
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error"
       });
     }
   }, [sessionId]);
@@ -267,7 +294,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-6">
         <div className="grid lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
           {/* Left: Bill Input */}
@@ -283,19 +310,14 @@ export default function Home() {
           {/* Right: Results */}
           <div className="lg:col-span-1">
             {result ? (
-              <ResultsPanel 
-                result={result} 
+              <ResultsPanel
+                result={result}
                 disputeStatus={disputeStatus}
                 onGenerateDispute={handleGenerateDispute}
                 onDownloadLetter={handleDownloadLetter}
               />
             ) : (
-              <div className="h-full border rounded-lg bg-card flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <p className="text-lg font-medium mb-1">No results yet</p>
-                  <p className="text-sm">Upload a bill to start analysis</p>
-                </div>
-              </div>
+              <EmptyResultsPlaceholder isAnalyzing={isAnalyzing} />
             )}
           </div>
         </div>

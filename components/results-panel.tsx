@@ -3,19 +3,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { 
-  DollarSign, 
-  AlertTriangle, 
-  TrendingUp, 
+import {
+  DollarSign,
+  AlertTriangle,
+  TrendingUp,
   Scale,
   Download,
   FileText,
   Bell,
   Loader2,
-  CheckCircle
+  CheckCircle,
+  BarChart3,
 } from "lucide-react";
 import { cn, formatCurrency, formatPercent } from "@/lib/utils";
 import { AnalysisResult, PricingResult, BillingError, DisputeLetterStatus } from "@/lib/types";
+import { useState, useEffect, useRef } from "react";
 
 interface ResultsPanelProps {
   result: AnalysisResult;
@@ -24,17 +26,47 @@ interface ResultsPanelProps {
   onDownloadLetter?: (url: string) => Promise<void>;
 }
 
-function MetricCard({ 
-  label, 
-  value, 
-  icon: Icon, 
-  variant = "default" 
-}: { 
-  label: string; 
-  value: string; 
+function useAnimatedNumber(target: number, duration = 1200): number {
+  const [current, setCurrent] = useState(0);
+  const startRef = useRef<number | null>(null);
+  const frameRef = useRef<number>(0);
+
+  useEffect(() => {
+    startRef.current = null;
+    const animate = (timestamp: number) => {
+      if (startRef.current === null) startRef.current = timestamp;
+      const elapsed = timestamp - startRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCurrent(eased * target);
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(animate);
+      }
+    };
+    frameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target, duration]);
+
+  return current;
+}
+
+function AnimatedMetricCard({
+  label,
+  value,
+  icon: Icon,
+  variant = "default",
+  index = 0,
+}: {
+  label: string;
+  value: number;
   icon: React.ElementType;
   variant?: "default" | "success" | "warning" | "destructive";
+  index?: number;
 }) {
+  const animatedValue = useAnimatedNumber(value);
+  const isCount = !label.toLowerCase().includes("billed") && !label.toLowerCase().includes("rate") && !label.toLowerCase().includes("overcharge");
+
   const colors = {
     default: "text-foreground bg-secondary",
     success: "text-success bg-success/10",
@@ -42,15 +74,30 @@ function MetricCard({
     destructive: "text-destructive bg-destructive/10",
   };
 
+  const borderColors = {
+    default: "border-border",
+    success: "border-success/20",
+    warning: "border-warning/20",
+    destructive: "border-destructive/20",
+  };
+
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border">
+    <div
+      className={cn(
+        "flex items-center gap-3 p-3 rounded-lg border animate-fade-in-up",
+        borderColors[variant]
+      )}
+      style={{ animationDelay: `${index * 100}ms`, animationFillMode: "both" }}
+    >
       <div className={cn("h-10 w-10 rounded-md flex items-center justify-center", colors[variant])}>
         <Icon className="h-5 w-5" />
       </div>
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={cn("text-lg font-semibold", variant !== "default" && colors[variant].split(" ")[0])}>
-          {value}
+        <p className={cn("text-lg font-semibold tabular-nums", variant !== "default" && colors[variant].split(" ")[0])}>
+          {isCount
+            ? Math.round(animatedValue).toString()
+            : formatCurrency(animatedValue)}
         </p>
       </div>
     </div>
@@ -76,7 +123,11 @@ function PricingTable({ results }: { results: PricingResult[] }) {
         </thead>
         <tbody>
           {results.map((item, idx) => (
-            <tr key={idx} className="border-b border-border/50">
+            <tr
+              key={idx}
+              className="border-b border-border/50 animate-fade-in-up"
+              style={{ animationDelay: `${idx * 60}ms`, animationFillMode: "both" }}
+            >
               <td className="py-3 font-mono text-primary">{item.cpt_code}</td>
               <td className="py-3 text-foreground/80 max-w-[200px] truncate">{item.description}</td>
               <td className="py-3 text-right">{formatCurrency(item.billed_amount)}</td>
@@ -101,7 +152,7 @@ function PricingTable({ results }: { results: PricingResult[] }) {
 function ErrorFindings({ errors }: { errors: BillingError[] }) {
   if (!errors || errors.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
+      <div className="flex flex-col items-center justify-center py-8 text-center animate-fade-in-up">
         <CheckCircle className="h-12 w-12 text-success mb-3" />
         <p className="font-medium">No billing errors detected</p>
         <p className="text-sm text-muted-foreground">Your bill appears to be accurate.</p>
@@ -126,12 +177,13 @@ function ErrorFindings({ errors }: { errors: BillingError[] }) {
   return (
     <div className="space-y-3">
       {errors.map((error, idx) => (
-        <div 
-          key={idx} 
+        <div
+          key={idx}
           className={cn(
-            "p-4 rounded-lg border-l-4",
+            "p-4 rounded-lg border-l-4 animate-slide-in",
             severityColors[error.severity]
           )}
+          style={{ animationDelay: `${idx * 80}ms`, animationFillMode: "both" }}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1">
@@ -168,11 +220,11 @@ function ErrorFindings({ errors }: { errors: BillingError[] }) {
   );
 }
 
-function DisputeSection({ 
-  status, 
+function DisputeSection({
+  status,
   onGenerate,
   onDownloadLetter,
-}: { 
+}: {
   status: DisputeLetterStatus | null;
   onGenerate: () => void;
   onDownloadLetter?: (url: string) => Promise<void>;
@@ -183,7 +235,7 @@ function DisputeSection({
         <FileText className="h-12 w-12 text-muted-foreground mb-4" />
         <h3 className="font-medium mb-2">Generate Dispute Letter</h3>
         <p className="text-sm text-muted-foreground mb-4 max-w-md">
-          Based on the errors found, we can generate a professional dispute letter 
+          Based on the errors found, we can generate a professional dispute letter
           citing relevant regulations and patient rights.
         </p>
         <Button onClick={onGenerate}>
@@ -243,7 +295,7 @@ function DisputeSection({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div className="flex flex-col items-center justify-center py-12 text-center animate-fade-in-up">
       <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center mb-4">
         <Bell className="h-8 w-8 text-success" />
       </div>
@@ -265,32 +317,39 @@ export function ResultsPanel({ result, disputeStatus, onGenerateDispute, onDownl
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg">Analysis Results</CardTitle>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-primary" />
+          Analysis Results
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden">
         <div className="grid grid-cols-2 gap-3">
-          <MetricCard 
-            label="Total Billed" 
-            value={formatCurrency(result.total_billed)} 
+          <AnimatedMetricCard
+            label="Total Billed"
+            value={result.total_billed}
             icon={DollarSign}
+            index={0}
           />
-          <MetricCard 
-            label="Fair Rate" 
-            value={formatCurrency(fairRate)} 
+          <AnimatedMetricCard
+            label="Fair Rate"
+            value={fairRate}
             icon={Scale}
             variant="success"
+            index={1}
           />
-          <MetricCard 
-            label="Overcharge" 
-            value={formatCurrency(result.total_overcharge)} 
+          <AnimatedMetricCard
+            label="Overcharge"
+            value={result.total_overcharge}
             icon={TrendingUp}
             variant="warning"
+            index={2}
           />
-          <MetricCard 
-            label="Errors Found" 
-            value={result.error_count.toString()} 
+          <AnimatedMetricCard
+            label="Errors Found"
+            value={result.error_count}
             icon={AlertTriangle}
             variant={result.error_count > 0 ? "destructive" : "success"}
+            index={3}
           />
         </div>
 

@@ -9,7 +9,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BillShield - AI Medical Bill Analyzer",
+  title: "Fair-Med - AI Medical Bill Analyzer",
   description: "Detect billing errors, compare against fair pricing, and generate dispute letters automatically.",
 };
 
