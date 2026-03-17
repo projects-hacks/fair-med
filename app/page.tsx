@@ -9,6 +9,15 @@ import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/li
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
 
+function toAbsoluteDownloadUrl(url?: string): string | undefined {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (BACKEND_URL.startsWith("http://") || BACKEND_URL.startsWith("https://")) {
+    return `${BACKEND_URL.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+  }
+  return url;
+}
+
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
@@ -160,6 +169,9 @@ export default function Home() {
       const pollStatus = async () => {
         const statusResponse = await fetch(`${BACKEND_URL}/dispute/status/${sessionId}`);
         const statusData = await statusResponse.json();
+        if (statusData?.download_url) {
+          statusData.download_url = toAbsoluteDownloadUrl(statusData.download_url);
+        }
         setDisputeStatus(statusData);
 
         if (statusData.status === "pending" || statusData.status === "generating") {

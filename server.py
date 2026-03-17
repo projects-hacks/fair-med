@@ -14,6 +14,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import time
 import traceback
@@ -21,7 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
@@ -94,6 +95,49 @@ def _safe_persist(session_id: str, updates: dict[str, Any]) -> None:
         db.update_analysis(session_id, updates)
     except Exception:
         pass
+
+
+def _extract_text_from_upload(file: UploadFile, content_bytes: bytes) -> str:
+    """Extract bill text from uploaded file bytes with PDF-aware parsing."""
+    content_type = (file.content_type or "").lower()
+    filename = (file.filename or "").lower()
+
+    is_pdf = content_type == "application/pdf" or filename.endswith(".pdf")
+    is_text = (
+        content_type.startswith("text/")
+        or filename.endswith(".txt")
+        or filename.endswith(".csv")
+        or filename.endswith(".md")
+    )
+
+    if is_pdf:
+        try:
+            from pypdf import PdfReader  # type: ignore[reportMissingImports]
+
+            reader = PdfReader(io.BytesIO(content_bytes))
+            pages = [page.extract_text() or "" for page in reader.pages]
+            return "\n\n".join(pages).strip()
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="PDF parser missing on backend. Install 'pypdf'.",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not extract text from PDF: {exc}",
+            ) from exc
+
+    if is_text:
+        return content_bytes.decode("utf-8", errors="replace").strip()
+
+    if content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="Image OCR is not enabled yet. Please upload a text-based PDF or paste bill text.",
+        )
+
+    return content_bytes.decode("utf-8", errors="replace").strip()
 
 
 def _map_pricing_for_frontend(pricing_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -327,10 +371,10 @@ async def analyze_stream(
     """Run the BillShield pipeline and stream SSE events."""
     text = bill_text or ""
 
-    # If a file was uploaded, read its text content
+    # If a file was uploaded, parse text content appropriately
     if file and not text:
         content_bytes = await file.read()
-        text = content_bytes.decode("utf-8", errors="replace")
+        text = _extract_text_from_upload(file, content_bytes)
 
     if not text.strip():
         return PlainTextResponse("bill_text or file is required", status_code=400)
@@ -437,7 +481,7 @@ async def _run_dispute_pipeline(session_id: str) -> None:
 # ──────────────────────────────────────────────────────────────
 
 @app.get("/dispute/status/{session_id}")
-async def dispute_status(session_id: str):
+async def dispute_status(session_id: str, request: Request):
     """Poll for dispute letter generation status."""
     job = _dispute_jobs.get(session_id)
     if not job:
@@ -457,7 +501,7 @@ async def dispute_status(session_id: str):
                     return {
                         "session_id": session_id,
                         "status": "ready",
-                        "download_url": f"/dispute/download/{session_id}",
+                        "download_url": str(request.url_for("dispute_download", session_id=session_id)),
                     }
         except Exception:
             pass
@@ -467,7 +511,7 @@ async def dispute_status(session_id: str):
     resp: dict[str, Any] = {"session_id": session_id, "status": status}
 
     if status == "ready":
-        resp["download_url"] = f"/dispute/download/{session_id}"
+        resp["download_url"] = str(request.url_for("dispute_download", session_id=session_id))
     elif status == "error":
         resp["error"] = job.get("error", "Unknown error")
 
@@ -521,5 +565,6 @@ async def dispute_download(session_id: str):
 # ──────────────────────────────────────────────────────────────
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "billshield-api"}
+    return {"status": "ok", "service": "fairmed-api"}

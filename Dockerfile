@@ -13,7 +13,6 @@ COPY agents/ agents/
 COPY tools/ tools/
 COPY prompts/ prompts/
 COPY server.py .
-COPY app.py .
 
 EXPOSE 8000
 
