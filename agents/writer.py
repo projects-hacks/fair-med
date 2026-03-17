@@ -77,8 +77,6 @@ def run_writer(state: BillShieldState) -> dict[str, Any]:
             "current_agent": "writer",
         }
 
-    print(f"[Writer] LLM response: {len(raw_text)} chars")
-
     letter = _extract_letter(raw_text)
 
     return {
@@ -89,7 +87,7 @@ def run_writer(state: BillShieldState) -> dict[str, Any]:
 
 
 def _extract_letter(raw_text: str) -> str:
-    """Extract the dispute letter from the LLM response, handling thinking tags."""
+    """Extract the dispute letter from LLM response, handling thinking tags."""
     outside_thinking = re.sub(
         r"<thinking>.*?</thinking>", "", raw_text, flags=re.DOTALL
     ).strip()
@@ -97,9 +95,13 @@ def _extract_letter(raw_text: str) -> str:
     if len(outside_thinking) > 100:
         text = outside_thinking
     else:
+<<<<<<< HEAD
         match = re.search(
             r"</thinking>\s*(.*)", raw_text, flags=re.DOTALL
         )
+=======
+        match = re.search(r"</thinking>\s*(.*)", raw_text, flags=re.DOTALL)
+>>>>>>> 2ee17ca (fix: CORS, rate limiter, writer letter extraction, dispute_generate status)
         if match and len(match.group(1).strip()) > 100:
             text = match.group(1).strip()
         else:

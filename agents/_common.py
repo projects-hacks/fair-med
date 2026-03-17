@@ -79,16 +79,15 @@ def get_next_api_key() -> str:
 # ──────────────────────────────────────────────────────────────
 
 _last_call_time: float = 0.0
-_RPM_LIMIT = int(os.getenv("NIM_RPM", "40"))  # build.nvidia.com shows 40 RPM
+_RPM_LIMIT = int(os.getenv("NIM_RPM", "40"))
 
 
 def rate_limit_wait() -> None:
     """Sleep if needed to stay within NIM rate limits.
 
     Default 40 RPM (per build.nvidia.com). Override with NIM_RPM env var.
-    With N keys, effective RPM = N × NIM_RPM.
-    At 40+ RPM, API response time (~5-15s) naturally keeps us under the limit,
-    so this is just a safety net.
+    With N keys, effective RPM = N * NIM_RPM.
+    At 40+ RPM, API response time naturally keeps us under the limit.
     """
     global _last_call_time
     keys = _ensure_api_keys()

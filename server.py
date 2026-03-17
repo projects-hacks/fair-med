@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
@@ -43,7 +43,7 @@ app = FastAPI(title="BillShield API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -354,7 +354,7 @@ async def dispute_generate(body: dict[str, Any]):
     """Trigger dispute letter generation for a completed analysis."""
     session_id = body.get("session_id", "")
     if not session_id:
-        return {"error": "session_id is required"}, 400
+        raise HTTPException(status_code=400, detail="session_id is required")
 
     _dispute_jobs[session_id] = {"status": "pending"}
 

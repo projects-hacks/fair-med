@@ -29,6 +29,6 @@ data/
 *.log
 *.tmp
 
-# Kubernetes local secrets & kubeconfig
+# Kubernetes secrets & kubeconfig
 k8s/secret.yaml
 k8s/*-kubeconfig.yaml
