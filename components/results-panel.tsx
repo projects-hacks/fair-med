@@ -21,6 +21,7 @@ interface ResultsPanelProps {
   result: AnalysisResult;
   disputeStatus: DisputeLetterStatus | null;
   onGenerateDispute: () => void;
+  onDownloadLetter?: (url: string) => Promise<void>;
 }
 
 function MetricCard({ 
@@ -169,10 +170,12 @@ function ErrorFindings({ errors }: { errors: BillingError[] }) {
 
 function DisputeSection({ 
   status, 
-  onGenerate 
+  onGenerate,
+  onDownloadLetter,
 }: { 
   status: DisputeLetterStatus | null;
   onGenerate: () => void;
+  onDownloadLetter?: (url: string) => Promise<void>;
 }) {
   if (!status) {
     return (
@@ -230,6 +233,15 @@ function DisputeSection({
     );
   }
 
+  const handleDownload = async () => {
+    if (!status.download_url) return;
+    if (onDownloadLetter) {
+      await onDownloadLetter(status.download_url);
+    } else {
+      window.open(status.download_url, "_blank");
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center mb-4">
@@ -239,17 +251,15 @@ function DisputeSection({
       <p className="text-sm text-muted-foreground mb-4">
         Your personalized dispute letter has been generated.
       </p>
-      <Button asChild>
-        <a href={status.download_url} download>
-          <Download className="h-4 w-4 mr-2" />
-          Download Letter
-        </a>
+      <Button onClick={handleDownload}>
+        <Download className="h-4 w-4 mr-2" />
+        Download Letter
       </Button>
     </div>
   );
 }
 
-export function ResultsPanel({ result, disputeStatus, onGenerateDispute }: ResultsPanelProps) {
+export function ResultsPanel({ result, disputeStatus, onGenerateDispute, onDownloadLetter }: ResultsPanelProps) {
   const fairRate = result.total_fair ?? (result.total_billed - result.total_overcharge);
 
   return (
@@ -299,7 +309,7 @@ export function ResultsPanel({ result, disputeStatus, onGenerateDispute }: Resul
             <ErrorFindings errors={result.audit_findings} />
           </TabsContent>
           <TabsContent value="dispute" className="flex-1 overflow-y-auto">
-            <DisputeSection status={disputeStatus} onGenerate={onGenerateDispute} />
+            <DisputeSection status={disputeStatus} onGenerate={onGenerateDispute} onDownloadLetter={onDownloadLetter} />
           </TabsContent>
         </Tabs>
       </CardContent>

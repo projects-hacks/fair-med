@@ -205,6 +205,25 @@ export default function Home() {
     }
   }, []);
 
+  const handleDownloadLetter = useCallback(async (url: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = "fairmed_dispute_letter.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error("Download error:", err);
+      window.open(url, "_blank");
+    }
+  }, []);
+
   const handleGenerateDispute = useCallback(async () => {
     if (!sessionId) return;
 
@@ -268,6 +287,7 @@ export default function Home() {
                 result={result} 
                 disputeStatus={disputeStatus}
                 onGenerateDispute={handleGenerateDispute}
+                onDownloadLetter={handleDownloadLetter}
               />
             ) : (
               <div className="h-full border rounded-lg bg-card flex items-center justify-center">

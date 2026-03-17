@@ -201,10 +201,10 @@ PIPELINE_STEPS: list[tuple[str, Any]] = [
     ("auditor", run_auditor),
 ]
 
+# Researcher + FactChecker run during analysis. Writer runs only on "Generate Letter" click.
 DISPUTE_STEPS: list[tuple[str, Any]] = [
     ("researcher", run_researcher),
     ("factchecker", run_factchecker),
-    ("writer", run_writer),
 ]
 
 
@@ -261,7 +261,7 @@ async def _stream_pipeline(bill_text: str):
             })
             traceback.print_exc()
 
-    # Conditional branch: if errors found, run researcher → factchecker → writer
+    # Conditional branch: if errors found, run researcher → factchecker (Writer runs on "Generate Letter" only)
     # Use error_count from Auditor; fallback to len(errors_found) for robustness
     errors_found = state.get("errors_found", [])
     error_count = int(state.get("error_count", 0) or 0)
@@ -291,6 +291,13 @@ async def _stream_pipeline(bill_text: str):
                     "timestamp": _ts(),
                 })
                 traceback.print_exc()
+        # Writer runs only when user clicks "Generate Letter"
+        yield _sse({
+            "type": "agent_skipped",
+            "agent": "writer",
+            "reason": "Click Generate Letter to create dispute letter",
+            "timestamp": _ts(),
+        })
     else:
         state["dispute_letter"] = "No billing errors detected. No dispute letter needed."
         for skipped in ("researcher", "factchecker", "writer"):
