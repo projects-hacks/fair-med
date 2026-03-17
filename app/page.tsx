@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Header } from "@/components/header";
 import { BillInput } from "@/components/bill-input";
 import { AgentWorkflow } from "@/components/agent-workflow";
 import { ResultsPanel } from "@/components/results-panel";
 import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/lib/types";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
+const BACKEND_URL = "http://23.239.6.35";
+
+// Agent sequence for visualization
+const AGENT_SEQUENCE: AgentName[] = ["triage", "parser", "pricing", "auditor", "researcher", "factchecker", "writer"];
 
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -15,7 +18,43 @@ export default function Home() {
   const [currentAgent, setCurrentAgent] = useState<AgentName | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [disputeStatus, setDisputeStatus] = useState<DisputeLetterStatus | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Simulate agent progression based on poll status
+  const updateAgentProgress = useCallback((status: string, agentsUsed?: AgentName[]) => {
+    if (status === "pending") {
+      // Starting - show triage as running
+      setCurrentAgent("triage");
+      setAgentEvents([{ agent: "triage", status: "running", timestamp: new Date().toISOString() }]);
+    } else if (status === "running") {
+      // Progress through agents based on time/status
+      setAgentEvents(prev => {
+        const completed = prev.filter(e => e.status === "complete").length;
+        const nextIdx = Math.min(completed + 1, AGENT_SEQUENCE.length - 1);
+        const nextAgent = AGENT_SEQUENCE[nextIdx];
+        
+        // Mark previous as complete, current as running
+        const updated = AGENT_SEQUENCE.slice(0, nextIdx).map(agent => ({
+          agent,
+          status: "complete" as const,
+          timestamp: new Date().toISOString()
+        }));
+        
+        updated.push({ agent: nextAgent, status: "running", timestamp: new Date().toISOString() });
+        setCurrentAgent(nextAgent);
+        return updated;
+      });
+    } else if (status === "completed" && agentsUsed) {
+      // All done - mark all used agents as complete
+      setCurrentAgent(null);
+      setAgentEvents(agentsUsed.map(agent => ({
+        agent,
+        status: "complete",
+        timestamp: new Date().toISOString()
+      })));
+    }
+  }, []);
 
   const handleAnalyze = useCallback(async (data: { text?: string; file?: File }) => {
     setIsAnalyzing(true);
@@ -23,146 +62,114 @@ export default function Home() {
     setCurrentAgent(null);
     setResult(null);
     setDisputeStatus(null);
+    setJobId(null);
+
+    // Clear any existing polling
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+    }
 
     try {
-      // Create form data for file upload or text
-      const formData = new FormData();
-      if (data.file) {
-        formData.append("file", data.file);
-      } else if (data.text) {
-        formData.append("bill_text", data.text);
-      }
-
-      // Use SSE endpoint for real-time updates
-      const response = await fetch(`${BACKEND_URL}/analyze/stream`, {
+      // Start analysis - POST /api/analyze
+      const response = await fetch(`${BACKEND_URL}/api/analyze`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bill_text: data.text || "" }),
       });
 
       if (!response.ok) {
         throw new Error(`Analysis failed: ${response.statusText}`);
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      const { job_id } = await response.json();
+      setJobId(job_id);
+      updateAgentProgress("pending");
 
-      if (!reader) {
-        throw new Error("No response body");
-      }
+      // Poll for results - GET /api/analyze/{job_id}
+      const pollResults = async () => {
+        try {
+          const statusResponse = await fetch(`${BACKEND_URL}/api/analyze/${job_id}`);
+          const statusData = await statusResponse.json();
 
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const jsonStr = line.slice(6);
-            if (jsonStr === "[DONE]") continue;
-
-            try {
-              const event = JSON.parse(jsonStr);
-              
-              switch (event.type) {
-                case "session_start":
-                  setSessionId(event.session_id);
-                  break;
-                  
-                case "agent_start":
-                  setCurrentAgent(event.agent);
-                  setAgentEvents(prev => [
-                    ...prev.filter(e => e.agent !== event.agent),
-                    { agent: event.agent, status: "running", timestamp: new Date().toISOString() }
-                  ]);
-                  break;
-                  
-                case "agent_reasoning":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
-                      ? { ...e, reasoning: event.reasoning }
-                      : e
-                  ));
-                  break;
-                  
-                case "agent_tool_call":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
-                      ? { ...e, tool_calls: [...(e.tool_calls || []), event.tool_call] }
-                      : e
-                  ));
-                  break;
-                  
-                case "agent_complete":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
-                      ? { ...e, status: "complete", output: event.output }
-                      : e
-                  ));
-                  setCurrentAgent(null);
-                  break;
-                  
-                case "agent_error":
-                  setAgentEvents(prev => prev.map(e => 
-                    e.agent === event.agent 
-                      ? { ...e, status: "error", error: event.error }
-                      : e
-                  ));
-                  setCurrentAgent(null);
-                  break;
-                  
-                case "agent_skipped":
-                  setAgentEvents(prev => [
-                    ...prev.filter(e => e.agent !== event.agent),
-                    { agent: event.agent, status: "skipped", timestamp: new Date().toISOString() }
-                  ]);
-                  break;
-                  
-                case "analysis_complete":
-                  setResult(event.result);
-                  setCurrentAgent(null);
-                  break;
-              }
-            } catch (parseError) {
-              console.error("Failed to parse SSE event:", parseError);
-            }
+          if (statusData.status === "completed") {
+            // Transform backend response to our format
+            const analysisResult: AnalysisResult = {
+              session_id: job_id,
+              status: "complete",
+              total_billed: statusData.total_billed || 0,
+              total_fair: statusData.total_fair || 0,
+              total_overcharge: statusData.total_overcharge || 0,
+              error_count: statusData.error_count || 0,
+              parsed_charges: statusData.parsed_charges || [],
+              pricing_results: statusData.pricing_results || [],
+              audit_findings: statusData.audit_findings || statusData.errors_found || [],
+              agents_used: statusData.agents_used || AGENT_SEQUENCE,
+            };
+            
+            setResult(analysisResult);
+            updateAgentProgress("completed", analysisResult.agents_used);
+            setIsAnalyzing(false);
+          } else if (statusData.status === "error" || statusData.status === "failed") {
+            console.error("Analysis failed:", statusData.error);
+            setIsAnalyzing(false);
+          } else {
+            // Still running - update progress and continue polling
+            updateAgentProgress(statusData.status);
+            pollingRef.current = setTimeout(pollResults, 1500);
           }
+        } catch (pollError) {
+          console.error("Polling error:", pollError);
+          pollingRef.current = setTimeout(pollResults, 2000);
         }
-      }
+      };
+
+      // Start polling
+      pollingRef.current = setTimeout(pollResults, 1000);
+
     } catch (error) {
       console.error("Analysis error:", error);
-    } finally {
       setIsAnalyzing(false);
     }
-  }, []);
+  }, [updateAgentProgress]);
 
   const handleGenerateDispute = useCallback(async () => {
-    if (!sessionId) return;
+    if (!jobId) return;
 
-    setDisputeStatus({ session_id: sessionId, status: "pending" });
+    setDisputeStatus({ session_id: jobId, status: "pending" });
 
     try {
-      const response = await fetch(`${BACKEND_URL}/dispute/generate`, {
+      // Trigger letter generation - POST /api/letter/{job_id}
+      const response = await fetch(`${BACKEND_URL}/api/letter/${jobId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId }),
       });
 
       if (!response.ok) {
         throw new Error("Failed to start dispute generation");
       }
 
-      // Poll for status
+      // Poll for letter status - GET /api/letter/{job_id}
       const pollStatus = async () => {
-        const statusResponse = await fetch(`${BACKEND_URL}/dispute/status/${sessionId}`);
-        const statusData = await statusResponse.json();
-        setDisputeStatus(statusData);
-
-        if (statusData.status === "pending" || statusData.status === "generating") {
+        try {
+          const statusResponse = await fetch(`${BACKEND_URL}/api/letter/${jobId}`);
+          const statusData = await statusResponse.json();
+          
+          if (statusData.status === "ready" || statusData.status === "completed") {
+            setDisputeStatus({
+              session_id: jobId,
+              status: "ready",
+              download_url: statusData.download_url || statusData.letter_url || `${BACKEND_URL}/api/letter/${jobId}/download`,
+            });
+          } else if (statusData.status === "error" || statusData.status === "failed") {
+            setDisputeStatus({
+              session_id: jobId,
+              status: "error",
+              error: statusData.error || "Letter generation failed",
+            });
+          } else {
+            setDisputeStatus({ session_id: jobId, status: "generating" });
+            setTimeout(pollStatus, 2000);
+          }
+        } catch (pollError) {
           setTimeout(pollStatus, 2000);
         }
       };
@@ -170,12 +177,12 @@ export default function Home() {
       pollStatus();
     } catch (error) {
       setDisputeStatus({ 
-        session_id: sessionId, 
+        session_id: jobId, 
         status: "error", 
         error: error instanceof Error ? error.message : "Unknown error" 
       });
     }
-  }, [sessionId]);
+  }, [jobId]);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
