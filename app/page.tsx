@@ -35,13 +35,13 @@ export default function Home() {
         const nextAgent = AGENT_SEQUENCE[nextIdx];
         
         // Mark previous as complete, current as running
-        const updated = AGENT_SEQUENCE.slice(0, nextIdx).map(agent => ({
+        const updated: AgentEvent[] = AGENT_SEQUENCE.slice(0, nextIdx).map(agent => ({
           agent,
           status: "complete" as const,
           timestamp: new Date().toISOString()
         }));
         
-        updated.push({ agent: nextAgent, status: "running", timestamp: new Date().toISOString() });
+        updated.push({ agent: nextAgent, status: "running" as const, timestamp: new Date().toISOString() });
         setCurrentAgent(nextAgent);
         return updated;
       });
