@@ -9,11 +9,53 @@ import { AgentEvent, AgentName, AnalysisResult, DisputeLetterStatus } from "@/li
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "/api";
 
+function getBackendCandidates(): string[] {
+  const candidates: string[] = [];
+
+  if (BACKEND_URL) {
+    candidates.push(BACKEND_URL.replace(/\/$/, ""));
+  }
+
+  if (typeof window !== "undefined") {
+    const isHttpsPage = window.location.protocol === "https:";
+    if (isHttpsPage && BACKEND_URL.startsWith("http://")) {
+      const httpsCandidate = BACKEND_URL.replace(/^http:\/\//, "https://").replace(/\/$/, "");
+      if (!candidates.includes(httpsCandidate)) {
+        candidates.unshift(httpsCandidate);
+      }
+      if (!candidates.includes("/api")) {
+        candidates.push("/api");
+      }
+    }
+  }
+
+  return candidates.length > 0 ? candidates : ["/api"];
+}
+
+async function fetchFromBackend(path: string, init?: RequestInit): Promise<Response> {
+  const bases = getBackendCandidates();
+  let lastError: unknown = null;
+
+  for (const base of bases) {
+    try {
+      const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+      const response = await fetch(url, init);
+      return response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Failed to reach backend");
+}
+
 function toAbsoluteDownloadUrl(url?: string): string | undefined {
   if (!url) return url;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  if (BACKEND_URL.startsWith("http://") || BACKEND_URL.startsWith("https://")) {
-    return `${BACKEND_URL.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+  const candidates = getBackendCandidates();
+  const absoluteBase = candidates.find((c) => c.startsWith("http://") || c.startsWith("https://"));
+  if (absoluteBase) {
+    return `${absoluteBase.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
   }
   return url;
 }
@@ -43,7 +85,7 @@ export default function Home() {
       }
 
       // Use SSE endpoint for real-time updates
-      const response = await fetch(`${BACKEND_URL}/analyze/stream`, {
+      const response = await fetchFromBackend(`/analyze/stream`, {
         method: "POST",
         body: formData,
       });
@@ -155,7 +197,7 @@ export default function Home() {
     setDisputeStatus({ session_id: sessionId, status: "pending" });
 
     try {
-      const response = await fetch(`${BACKEND_URL}/dispute/generate`, {
+      const response = await fetchFromBackend(`/dispute/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),
@@ -167,7 +209,7 @@ export default function Home() {
 
       // Poll for status
       const pollStatus = async () => {
-        const statusResponse = await fetch(`${BACKEND_URL}/dispute/status/${sessionId}`);
+        const statusResponse = await fetchFromBackend(`/dispute/status/${sessionId}`);
         const statusData = await statusResponse.json();
         if (statusData?.download_url) {
           statusData.download_url = toAbsoluteDownloadUrl(statusData.download_url);
