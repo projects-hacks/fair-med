@@ -23,7 +23,7 @@ from ._common import (
 )
 
 
-def run_triage(state: BillShieldState) -> dict[str, Any]:
+async def run_triage(state: BillShieldState) -> dict[str, Any]:
     """Triage node: reads bill text and produces an analysis plan."""
     bill_text = state.get("bill_text", "")
     if not bill_text.strip():
@@ -42,8 +42,8 @@ def run_triage(state: BillShieldState) -> dict[str, Any]:
     ]
 
     try:
-        rate_limit_wait()
-        response = llm.invoke(messages)
+        await rate_limit_wait()
+        response = await llm.ainvoke(messages)
         raw_text = response.content if isinstance(response.content, str) else str(response.content)
     except Exception as exc:
         return {

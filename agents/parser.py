@@ -56,7 +56,7 @@ def _validate_icd10_codes(codes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return validated
 
 
-def run_parser(state: BillShieldState) -> dict[str, Any]:
+async def run_parser(state: BillShieldState) -> dict[str, Any]:
     """Parser node: extracts charges and diagnosis codes from bill text."""
     bill_text = state.get("bill_text", "")
     print(f"[Parser] bill_text length: {len(bill_text)}")
@@ -73,8 +73,8 @@ def run_parser(state: BillShieldState) -> dict[str, Any]:
     user_message = f"Parse this medical bill and extract all charges and ICD-10 codes:\n\n{bill_text}"
 
     try:
-        rate_limit_wait()
-        response = llm.invoke([
+        await rate_limit_wait()
+        response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
         ])

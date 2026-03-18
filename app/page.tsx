@@ -133,7 +133,16 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error(`Analysis failed: ${response.statusText}`);
+        let errorMsg = `Analysis failed: ${response.statusText}`;
+        try {
+          const errData = await response.json();
+          if (errData && errData.detail) {
+            errorMsg = errData.detail;
+          }
+        } catch (e) {
+          // ignore json parse error
+        }
+        throw new Error(errorMsg);
       }
 
       const reader = response.body?.getReader();
@@ -228,6 +237,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Analysis error:", error);
+      alert(error instanceof Error ? error.message : "An error occurred during analysis.");
     } finally {
       setIsAnalyzing(false);
     }

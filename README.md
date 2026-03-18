@@ -8,24 +8,32 @@ Multi-agent AI system that analyzes medical bills, detects billing errors (dupli
 
 7 agents orchestrated by LangGraph:
 
-```
-USER → pastes medical bill
-       ↓
-   [TRIAGE]  → reads bill, identifies red flags, plans strategy
-       ↓
-   [PARSER]  → extracts CPT codes, ICD-10 diagnoses, charges
-       ↓
-   [PRICING] → compares each charge against CMS Medicare rates
-       ↓
-   [AUDITOR] → detects duplicates, upcoding, unbundling, overcharges
-       ↓ (errors found?)
-   [RESEARCHER] → searches for applicable patient rights & laws
-       ↓
-   [FACT-CHECKER] → verifies legal references actually apply
-       ↓
-   [WRITER] → generates dispute letter with evidence
-       ↓
-   OUTPUT: Report + Dispute Letter
+```mermaid
+graph TD
+    User([USER]) -->|Uploads Bill| UI[Next.js Frontend]
+    UI -->|POST /analyze/stream| API[FastAPI Backend]
+    
+    subgraph LangGraph Pipeline
+        direction TB
+        Triage[Triage Agent] -->|Plans Analysis| Parser[Parser Agent]
+        Parser -->|Extracts CPT/ICD10| Pricing[Pricing Agent]
+        Pricing -->|Supabase Check| Auditor[Auditor Agent]
+        
+        Auditor -->|Detects Errors| Branch{Errors Found?}
+    end
+    
+    subgraph Dispute Generation
+        direction TB
+        Researcher[Researcher Agent] -->|Web Search| FactChecker[Fact-Checker Agent]
+        FactChecker -->|Verifies Rights| Writer[Writer Agent]
+    end
+    
+    API -->|Triggers| Triage
+    Branch -->|Yes| Researcher
+    Branch -->|No| Done((Done))
+    Writer -->|Saves Dispute Letter| DB[(Supabase DB)]
+    DB -->|Status Polls| UI
+    API -.-> UI
 ```
 
 ## Models
@@ -44,16 +52,15 @@ USER → pastes medical bill
 ## Project Structure
 
 ```
-fairmed/
-├── frontend/              # Next.js 15 app
-│   ├── app/              # App router pages
-│   ├── components/       # React components
-│   └── lib/              # Utilities and types
-├── backend/               # FastAPI backend
-│   └── main.py           # API endpoints
-├── agents/                # Python LangGraph agents
-├── tools/                 # Database and API tools
-└── prompts/               # Agent system prompts
+billshield/
+├── app/                  # Next.js 15 App router (UI)
+├── components/           # React component library
+├── agents/               # Python LangGraph agents
+├── tools/                # DB clients and Web Search tools
+├── prompts/              # System Prompts for agents
+├── server.py             # FastAPI backend entrypoint (REST+SSE)
+├── fetch_ncci_latest.py  # CMS data ingestion script
+└── next.config.ts        # Rewrites /api to FastAPI
 ```
 
 ## Tech Stack

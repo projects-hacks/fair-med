@@ -22,7 +22,7 @@ from ._common import (
 )
 
 
-def run_writer(state: BillShieldState) -> dict[str, Any]:
+async def run_writer(state: BillShieldState) -> dict[str, Any]:
     """Writer node: generates the dispute letter from all findings."""
     errors = state.get("errors_found", [])
     verified_rights = state.get("verified_rights", [])
@@ -67,8 +67,8 @@ def run_writer(state: BillShieldState) -> dict[str, Any]:
     ]
 
     try:
-        rate_limit_wait()
-        response = llm.invoke(messages)
+        await rate_limit_wait()
+        response = await llm.ainvoke(messages)
         raw_text = response.content if isinstance(response.content, str) else str(response.content)
     except Exception as exc:
         print(f"[Writer] LLM error: {exc}")

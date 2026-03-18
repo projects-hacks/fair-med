@@ -50,9 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for dispute letter generation status.
-# In production this would be backed by a database or task queue.
-_dispute_jobs: dict[str, dict[str, Any]] = {}
 
 # ──────────────────────────────────────────────────────────────
 # Helpers
@@ -116,7 +113,26 @@ def _extract_text_from_upload(file: UploadFile, content_bytes: bytes) -> str:
 
             reader = PdfReader(io.BytesIO(content_bytes))
             pages = [page.extract_text() or "" for page in reader.pages]
-            return "\n\n".join(pages).strip()
+            text = "\n\n".join(pages).strip()
+            
+            if not text:
+                # Fallback to OCR for image-based PDFs
+                try:
+                    import pytesseract  # type: ignore[reportMissingImports]
+                    from pdf2image import convert_from_bytes  # type: ignore[reportMissingImports]
+                    
+                    images = convert_from_bytes(content_bytes)
+                    ocr_pages = [pytesseract.image_to_string(img) for img in images]
+                    text = "\n\n".join(ocr_pages).strip()
+                except ImportError:
+                    pass
+                
+            if not text:
+                raise HTTPException(
+                    status_code=400,
+                    detail="PDF appears to be an image with no readable text, and OCR is not available. Please upload a text-based PDF or paste the bill text directly.",
+                )
+            return text
         except ImportError as exc:
             raise HTTPException(
                 status_code=500,
@@ -227,7 +243,7 @@ async def _stream_pipeline(bill_text: str):
     for agent_name, agent_fn in PIPELINE_STEPS:
         yield _sse({"type": "agent_start", "agent": agent_name, "timestamp": _ts()})
         try:
-            updates = await asyncio.to_thread(agent_fn, state)
+            updates = await agent_fn(state)
             state.update(updates)
             agents_used.append(agent_name)
 
@@ -272,7 +288,7 @@ async def _stream_pipeline(bill_text: str):
         for agent_name, agent_fn in DISPUTE_STEPS:
             yield _sse({"type": "agent_start", "agent": agent_name, "timestamp": _ts()})
             try:
-                updates = await asyncio.to_thread(agent_fn, state)
+                updates = await agent_fn(state)
                 state.update(updates)
                 agents_used.append(agent_name)
 
@@ -411,7 +427,7 @@ async def dispute_generate(body: dict[str, Any]):
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    _dispute_jobs[session_id] = {"status": "pending"}
+    _safe_persist(session_id, {"status": "generating_dispute"})
 
     # Run in background
     asyncio.create_task(_run_dispute_pipeline(session_id))
@@ -422,7 +438,7 @@ async def dispute_generate(body: dict[str, Any]):
 async def _run_dispute_pipeline(session_id: str) -> None:
     """Background task: load analysis state from DB and run researcher → factchecker → writer."""
     try:
-        _dispute_jobs[session_id] = {"status": "generating"}
+        _safe_persist(session_id, {"status": "generating_dispute"})
 
         # Load existing analysis from Supabase
         client = db.get_client()
@@ -434,7 +450,7 @@ async def _run_dispute_pipeline(session_id: str) -> None:
             .execute()
         )
         if not result.data:
-            _dispute_jobs[session_id] = {"status": "error", "error": "Analysis not found"}
+            _safe_persist(session_id, {"status": "dispute_error"})
             return
 
         row = result.data[0]
@@ -465,26 +481,22 @@ async def _run_dispute_pipeline(session_id: str) -> None:
 
         # Run the 3 dispute agents
         for agent_fn in (run_researcher, run_factchecker, run_writer):
-            updates = await asyncio.to_thread(agent_fn, state)
+            updates = await agent_fn(state)
             state.update(updates)
 
         letter = state.get("dispute_letter", "")
 
         # Persist to DB
         _safe_persist(session_id, {
+            "status": "complete",
             "dispute_letter": letter,
             "research_findings": state.get("patient_rights", []),
             "verified_rights": state.get("verified_rights", []),
         })
 
-        _dispute_jobs[session_id] = {
-            "status": "ready",
-            "dispute_letter": letter,
-        }
-
     except Exception as exc:
         traceback.print_exc()
-        _dispute_jobs[session_id] = {"status": "error", "error": str(exc)}
+        _safe_persist(session_id, {"status": "dispute_error"})
 
 
 # ──────────────────────────────────────────────────────────────
@@ -494,39 +506,34 @@ async def _run_dispute_pipeline(session_id: str) -> None:
 @app.get("/dispute/status/{session_id}")
 async def dispute_status(session_id: str, request: Request):
     """Poll for dispute letter generation status."""
-    job = _dispute_jobs.get(session_id)
-    if not job:
-        # Check DB for an already-completed letter
-        try:
-            client = db.get_client()
-            result = (
-                client.table("analysis_results")
-                .select("dispute_letter")
-                .eq("session_id", session_id)
-                .limit(1)
-                .execute()
-            )
-            if result.data:
-                letter = result.data[0].get("dispute_letter", "")
-                if letter and letter.strip() and "no dispute letter" not in letter.lower():
-                    return {
-                        "session_id": session_id,
-                        "status": "ready",
-                        "download_url": str(request.url_for("dispute_download", session_id=session_id)),
-                    }
-        except Exception:
-            pass
-        return {"session_id": session_id, "status": "pending"}
+    try:
+        client = db.get_client()
+        result = (
+            client.table("analysis_results")
+            .select("dispute_letter, status")
+            .eq("session_id", session_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            row = result.data[0]
+            letter = row.get("dispute_letter", "")
+            db_status = row.get("status", "")
+            
+            if letter and letter.strip() and "no dispute letter" not in letter.lower() and db_status != "generating_dispute":
+                return {
+                    "session_id": session_id,
+                    "status": "ready",
+                    "download_url": str(request.url_for("dispute_download", session_id=session_id)),
+                }
+            elif db_status == "generating_dispute":
+                return {"session_id": session_id, "status": "generating"}
+            elif db_status == "dispute_error":
+                return {"session_id": session_id, "status": "error", "error": "Failed to generate dispute"}
+    except Exception as e:
+        return {"session_id": session_id, "status": "error", "error": str(e)}
 
-    status = job["status"]
-    resp: dict[str, Any] = {"session_id": session_id, "status": status}
-
-    if status == "ready":
-        resp["download_url"] = str(request.url_for("dispute_download", session_id=session_id))
-    elif status == "error":
-        resp["error"] = job.get("error", "Unknown error")
-
-    return resp
+    return {"session_id": session_id, "status": "pending"}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -538,26 +545,19 @@ async def dispute_download(session_id: str):
     """Download the generated dispute letter as a text file."""
     letter = ""
 
-    # Check in-memory first
-    job = _dispute_jobs.get(session_id)
-    if job and job.get("status") == "ready":
-        letter = job.get("dispute_letter", "")
-
-    # Fall back to DB
-    if not letter:
-        try:
-            client = db.get_client()
-            result = (
-                client.table("analysis_results")
-                .select("dispute_letter")
-                .eq("session_id", session_id)
-                .limit(1)
-                .execute()
-            )
-            if result.data:
-                letter = result.data[0].get("dispute_letter", "")
-        except Exception:
-            pass
+    try:
+        client = db.get_client()
+        result = (
+            client.table("analysis_results")
+            .select("dispute_letter")
+            .eq("session_id", session_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            letter = result.data[0].get("dispute_letter", "")
+    except Exception:
+        pass
 
     if not letter or not letter.strip():
         return PlainTextResponse("Dispute letter not found", status_code=404)

@@ -17,7 +17,7 @@ from .state import BillShieldState
 from tools import db
 
 
-def run_pricing(state: BillShieldState) -> dict[str, Any]:
+async def run_pricing(state: BillShieldState) -> dict[str, Any]:
     """Pricing node: looks up Medicare rates and flags overcharges."""
     charges = state.get("parsed_charges", [])
     if not charges:
@@ -88,9 +88,9 @@ def run_pricing(state: BillShieldState) -> dict[str, Any]:
             "cpt_code": cpt,
             "description": description or rate_info.get("description", ""),
             "billed": billed,
-            "medicare_rate": round(fair_total, 2),
-            "overcharge_pct": round(overcharge_pct, 1),
-            "overcharge_amount": round(overcharge_amount, 2),
+            "medicare_rate": round(float(fair_total), 2),
+            "overcharge_pct": round(float(overcharge_pct), 1),
+            "overcharge_amount": round(float(overcharge_amount), 2),
             "severity": severity,
             "found": rate_info.get("found", False),
             "category": rate_info.get("category", "Unknown"),

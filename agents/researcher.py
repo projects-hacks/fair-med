@@ -76,7 +76,7 @@ def _run_searches(error_types: list[str], state_hint: str) -> list[dict[str, Any
     return all_results
 
 
-def run_researcher(state: BillShieldState) -> dict[str, Any]:
+async def run_researcher(state: BillShieldState) -> dict[str, Any]:
     """Researcher node: searches for applicable patient billing rights."""
     errors = state.get("errors_found", [])
     if not errors:
@@ -116,8 +116,8 @@ def run_researcher(state: BillShieldState) -> dict[str, Any]:
     )
 
     try:
-        rate_limit_wait()
-        response = llm.invoke([
+        await rate_limit_wait()
+        response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
         ])

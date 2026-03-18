@@ -22,7 +22,7 @@ from ._common import (
 )
 
 
-def run_factchecker(state: BillShieldState) -> dict[str, Any]:
+async def run_factchecker(state: BillShieldState) -> dict[str, Any]:
     """Fact-checker node: verifies applicability of cited rights."""
     rights = state.get("patient_rights", [])
     errors = state.get("errors_found", [])
@@ -57,8 +57,8 @@ def run_factchecker(state: BillShieldState) -> dict[str, Any]:
     ]
 
     try:
-        rate_limit_wait()
-        response = llm.invoke(messages)
+        await rate_limit_wait()
+        response = await llm.ainvoke(messages)
         raw_text = response.content if isinstance(response.content, str) else str(response.content)
     except Exception as exc:
         return {

@@ -52,7 +52,7 @@ def _load_relevant_billing_rules(charges: list[dict[str, Any]]) -> dict[str, Any
         return {"_error": f"Failed to fetch billing rules from Supabase: {exc}"}
 
 
-def run_auditor(state: BillShieldState) -> dict[str, Any]:
+async def run_auditor(state: BillShieldState) -> dict[str, Any]:
     """Auditor node: analyzes charges for billing errors using reasoning."""
     charges = state.get("parsed_charges", [])
     icd_codes = state.get("icd_codes", [])
@@ -104,8 +104,8 @@ def run_auditor(state: BillShieldState) -> dict[str, Any]:
           f"rules loaded: {sum(len(v) for v in billing_rules.values() if isinstance(v, list))}")
 
     try:
-        rate_limit_wait()
-        response = llm.invoke(messages)
+        await rate_limit_wait()
+        response = await llm.ainvoke(messages)
         raw_text = _extract_content(response)
     except Exception as exc:
         print(f"[Auditor] LLM error: {type(exc).__name__}: {exc}")

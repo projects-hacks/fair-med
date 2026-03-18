@@ -78,11 +78,17 @@ def get_next_api_key() -> str:
 # Rate Limiting
 # ──────────────────────────────────────────────────────────────
 
+import asyncio
+
+def _ts() -> str:
+    # We will reuse this if needed, or just let time.time() be used locally
+    pass
+
 _last_call_time: float = 0.0
 _RPM_LIMIT = int(os.getenv("NIM_RPM", "40"))
 
 
-def rate_limit_wait() -> None:
+async def rate_limit_wait() -> None:
     """Sleep if needed to stay within NIM rate limits.
 
     Default 40 RPM (per build.nvidia.com). Override with NIM_RPM env var.
@@ -98,7 +104,7 @@ def rate_limit_wait() -> None:
     interval = 60.0 / effective_rpm
     elapsed = time.time() - _last_call_time
     if elapsed < interval:
-        time.sleep(interval - elapsed)
+        await asyncio.sleep(interval - elapsed)
     _last_call_time = time.time()
 
 
@@ -212,7 +218,7 @@ def extract_json(text: str) -> dict[str, Any] | list[Any]:
 # Tool Execution Loop
 # ──────────────────────────────────────────────────────────────
 
-def run_tool_agent(
+async def run_tool_agent(
     llm: ChatNVIDIA,
     tools: list[Any],
     system_prompt: str,
@@ -239,9 +245,9 @@ def run_tool_agent(
     ]
 
     for iteration in range(max_iterations):
-        rate_limit_wait()
+        await rate_limit_wait()
         try:
-            response: AIMessage = llm_with_tools.invoke(messages)
+            response: AIMessage = await llm_with_tools.ainvoke(messages)
         except Exception as exc:
             print(f"  [tool_agent] iter {iteration+1}: LLM error: {type(exc).__name__}: {exc}")
             break

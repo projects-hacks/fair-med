@@ -40,9 +40,11 @@ from tools import db
 # Node wrappers — persist agent output to Supabase after each step
 # ──────────────────────────────────────────────────────────────
 
+import asyncio
+
 def _timed(name, fn, state, persist_data):
     t0 = time.time()
-    result = fn(state)
+    result = asyncio.run(fn(state))
     elapsed = time.time() - t0
     print(f"[{name}] done in {elapsed:.1f}s")
     _persist(state, name.lower(), persist_data(result))
@@ -250,8 +252,9 @@ def generate_letter(analysis_state: dict[str, Any]) -> str:
     Returns:
         The dispute letter as a string.
     """
+    import asyncio
     t0 = time.time()
-    result = run_writer(analysis_state)
+    result = asyncio.run(run_writer(analysis_state))
     letter = result.get("dispute_letter", "")
     elapsed = time.time() - t0
     print(f"[Writer] done in {elapsed:.1f}s")
