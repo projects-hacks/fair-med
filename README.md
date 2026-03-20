@@ -4,6 +4,9 @@ Multi-agent AI system that analyzes medical bills, detects billing errors (dupli
 
 **NVIDIA Agents for Impact Hackathon | SJSU | March 2026**
 
+<img width="1433" height="727" alt="image" src="https://github.com/user-attachments/assets/e362a29b-8b55-4cf0-87cd-4a3a6f3b836a" />
+
+
 ## Architecture
 
 7 agents orchestrated by LangGraph:
